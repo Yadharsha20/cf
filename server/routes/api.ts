@@ -4,11 +4,35 @@ import { createClient } from '@supabase/supabase-js';
 
 const router = Router();
 
-// Initialize Supabase client
-const supabase = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_ANON_KEY!
-);
+// Initialize Supabase client with error handling
+let supabase: ReturnType<typeof createClient> | null = null;
+
+try {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+  
+  if (!supabaseUrl || !supabaseAnonKey || 
+      supabaseUrl === 'your_supabase_project_url_here' || 
+      supabaseAnonKey === 'your_supabase_anon_key_here') {
+    console.warn('Supabase credentials not configured. Please connect to Supabase to enable database functionality.');
+  } else {
+    supabase = createClient(supabaseUrl, supabaseAnonKey);
+    console.log('Supabase client initialized successfully');
+  }
+} catch (error) {
+  console.error('Failed to initialize Supabase client:', error);
+}
+
+// Middleware to check if Supabase is available
+const requireSupabase = (req: any, res: any, next: any) => {
+  if (!supabase) {
+    return res.status(503).json({
+      success: false,
+      message: "Database not configured. Please connect to Supabase first.",
+    });
+  }
+  next();
+};
 
 // Contact form schema
 const contactSchema = z.object({
@@ -28,11 +52,11 @@ const newsletterSchema = z.object({
 });
 
 // Contact form submission
-router.post("/contact", async (req, res) => {
+router.post("/contact", requireSupabase, async (req, res) => {
   try {
     const validatedData = contactSchema.parse(req.body);
     
-    const { data, error } = await supabase
+    const { data, error } = await supabase!
       .from('contacts')
       .insert([validatedData])
       .select()
@@ -70,9 +94,9 @@ router.post("/contact", async (req, res) => {
 });
 
 // Get all contacts (admin endpoint)
-router.get("/contacts", async (req, res) => {
+router.get("/contacts", requireSupabase, async (req, res) => {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await supabase!
       .from('contacts')
       .select('*')
       .order('created_at', { ascending: false });
@@ -96,12 +120,12 @@ router.get("/contacts", async (req, res) => {
 });
 
 // Newsletter subscription
-router.post("/newsletter", async (req, res) => {
+router.post("/newsletter", requireSupabase, async (req, res) => {
   try {
     const { email } = newsletterSchema.parse(req.body);
     
     // Check if email already exists
-    const { data: existing } = await supabase
+    const { data: existing } = await supabase!
       .from('newsletter_subscriptions')
       .select('id')
       .eq('email', email)
@@ -114,7 +138,7 @@ router.post("/newsletter", async (req, res) => {
       });
     }
     
-    const { data, error } = await supabase
+    const { data, error } = await supabase!
       .from('newsletter_subscriptions')
       .insert([{ email }])
       .select()
@@ -152,9 +176,9 @@ router.post("/newsletter", async (req, res) => {
 });
 
 // Get all newsletter subscriptions (admin endpoint)
-router.get("/newsletter", async (req, res) => {
+router.get("/newsletter", requireSupabase, async (req, res) => {
   try {
-    const { data, error } = await supabase
+    const { data, error } = await supabase!
       .from('newsletter_subscriptions')
       .select('*')
       .order('subscribed_at', { ascending: false });
