@@ -1,26 +1,19 @@
 import 'dotenv/config';
 import express from 'express';
 import session from 'express-session';
-import { neon } from '@neondatabase/serverless';
-import { drizzle } from 'drizzle-orm/neon-http';
-import ConnectPgSimple from 'connect-pg-simple';
+import MemoryStore from 'memorystore';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import apiRoutes from './routes/api.js';
-import * as schema from '../shared/schema.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Database connection
-const sql = neon(process.env.DATABASE_URL!);
-export const db = drizzle(sql, { schema });
-
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Session store
-const PgSession = ConnectPgSimple(session);
+// Session store - using memory store for simplicity in development
+const MemoryStoreSession = MemoryStore(session);
 
 // Middleware
 app.use(express.json());
@@ -28,10 +21,8 @@ app.use(express.urlencoded({ extended: true }));
 
 // Session configuration
 app.use(session({
-  store: new PgSession({
-    conString: process.env.DATABASE_URL,
-    tableName: 'session',
-    createTableIfMissing: true,
+  store: new MemoryStoreSession({
+    checkPeriod: 86400000, // prune expired entries every 24h
   }),
   secret: process.env.SESSION_SECRET || 'your-secret-key',
   resave: false,

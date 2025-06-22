@@ -1,10 +1,14 @@
 import { Router } from "express";
 import { z } from "zod";
-import { db } from "../index.js";
-import { contacts, newsletterSubscriptions } from "../../shared/schema.js";
-import { eq } from "drizzle-orm";
+import { createClient } from '@supabase/supabase-js';
 
 const router = Router();
+
+// Initialize Supabase client
+const supabase = createClient(
+  process.env.VITE_SUPABASE_URL!,
+  process.env.VITE_SUPABASE_ANON_KEY!
+);
 
 // Contact form schema
 const contactSchema = z.object({
@@ -12,7 +16,7 @@ const contactSchema = z.object({
   email: z.string().email("Invalid email address"),
   company: z.string().optional(),
   phone: z.string().optional(),
-  projectType: z.string().min(1, "Project type is required"),
+  project_type: z.string().min(1, "Project type is required"),
   budget: z.string().min(1, "Budget is required"),
   timeline: z.string().min(1, "Timeline is required"),
   message: z.string().min(1, "Message is required"),
@@ -28,15 +32,25 @@ router.post("/contact", async (req, res) => {
   try {
     const validatedData = contactSchema.parse(req.body);
     
-    const [contact] = await db
-      .insert(contacts)
-      .values({
-        ...validatedData,
-        createdAt: new Date(),
-      })
-      .returning();
+    const { data, error } = await supabase
+      .from('contacts')
+      .insert([validatedData])
+      .select()
+      .single();
 
-    res.json({ success: true, message: "Contact form submitted successfully", id: contact.id });
+    if (error) {
+      console.error("Supabase error:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to submit contact form",
+      });
+    }
+
+    res.json({ 
+      success: true, 
+      message: "Contact form submitted successfully", 
+      id: data.id 
+    });
   } catch (error) {
     console.error("Contact form error:", error);
     
@@ -58,8 +72,20 @@ router.post("/contact", async (req, res) => {
 // Get all contacts (admin endpoint)
 router.get("/contacts", async (req, res) => {
   try {
-    const allContacts = await db.select().from(contacts).orderBy(contacts.createdAt);
-    res.json(allContacts);
+    const { data, error } = await supabase
+      .from('contacts')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error("Supabase error:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to fetch contacts",
+      });
+    }
+
+    res.json(data);
   } catch (error) {
     console.error("Get contacts error:", error);
     res.status(500).json({
@@ -75,31 +101,37 @@ router.post("/newsletter", async (req, res) => {
     const { email } = newsletterSchema.parse(req.body);
     
     // Check if email already exists
-    const existing = await db
-      .select()
-      .from(newsletterSubscriptions)
-      .where(eq(newsletterSubscriptions.email, email))
-      .limit(1);
+    const { data: existing } = await supabase
+      .from('newsletter_subscriptions')
+      .select('id')
+      .eq('email', email)
+      .single();
     
-    if (existing.length > 0) {
+    if (existing) {
       return res.json({
         success: true,
         message: "You're already subscribed to our newsletter!",
       });
     }
     
-    const [subscription] = await db
-      .insert(newsletterSubscriptions)
-      .values({
-        email,
-        subscribedAt: new Date(),
-      })
-      .returning();
+    const { data, error } = await supabase
+      .from('newsletter_subscriptions')
+      .insert([{ email }])
+      .select()
+      .single();
+
+    if (error) {
+      console.error("Supabase error:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to subscribe to newsletter",
+      });
+    }
 
     res.json({
       success: true,
       message: "Successfully subscribed to newsletter!",
-      id: subscription.id,
+      id: data.id,
     });
   } catch (error) {
     console.error("Newsletter subscription error:", error);
@@ -122,12 +154,20 @@ router.post("/newsletter", async (req, res) => {
 // Get all newsletter subscriptions (admin endpoint)
 router.get("/newsletter", async (req, res) => {
   try {
-    const subscriptions = await db
-      .select()
-      .from(newsletterSubscriptions)
-      .orderBy(newsletterSubscriptions.subscribedAt);
+    const { data, error } = await supabase
+      .from('newsletter_subscriptions')
+      .select('*')
+      .order('subscribed_at', { ascending: false });
+
+    if (error) {
+      console.error("Supabase error:", error);
+      return res.status(500).json({
+        success: false,
+        message: "Failed to fetch newsletter subscriptions",
+      });
+    }
     
-    res.json(subscriptions);
+    res.json(data);
   } catch (error) {
     console.error("Get newsletter subscriptions error:", error);
     res.status(500).json({
